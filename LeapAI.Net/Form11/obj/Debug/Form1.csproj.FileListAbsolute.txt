@@ -1,0 +1,2 @@
+D:\GithubNew\16\MakeAi\1\LeapAI\LeapAI.Net\Form11\obj\Debug\Form1.csproj.AssemblyReference.cache
+D:\GithubNew\16\MakeAi\1\LeapAI\LeapAI.Net\Form11\obj\Debug\Form1.csproj.CoreCompileInputs.cache
