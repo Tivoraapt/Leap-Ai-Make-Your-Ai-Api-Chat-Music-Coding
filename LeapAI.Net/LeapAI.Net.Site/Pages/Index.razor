@@ -1,0 +1,224 @@
+﻿@page "/"
+@using LeapAI.Net.SDK.ObjectModels.RequestModels;
+@using LeapAI.Net.SDK.ObjectModels.ResponseModels;
+@using LeapAI.Net.SDK.ObjectModels;
+@using LeapAI.Net.SDK.Services.Image;
+@using LeapAI.Net.SDK.Services;
+
+<PageTitle>LeapAI.Net</PageTitle>
+
+<h1>Hello there!</h1>
+
+<p>
+    Welcome to the LeapAI.Net test site. Please visit the 
+    <a href="https://www.tryleap.ai/">LeapAI website</a> 
+    to retrieve your API key to get started or if you
+    experience any issues.
+</p>
+
+@if (JobInProgress)
+{
+    @if (JobDone)
+    {
+        @foreach (var image in ImageJobInfo.Images)
+        {
+            <img src="@image.Uri" />
+            <br />
+        }
+    }
+    else
+    {
+        <p>
+            Image Creation Job generated successfully! 
+            Monitoring for completion...
+        </p>
+        <br />
+        <br />
+    }    
+}
+else
+{
+    <p>Please enter your API key below:</p>
+    <input type="text" @bind="ApiKey" />
+    <br />
+    <br />
+
+    <p>Please enter your prompt below:</p>
+    <input type="text" @bind="Prompt" />
+    <br />
+    <br />
+
+    <p>
+        Please select the number of images you'd like to generate:
+        <select @bind="NumberOfSamples">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+        </select>
+    </p>
+    <br />
+
+    <p>
+        Please select the model you'd like to use:
+        <select @bind="ModelNumber">
+            <option value="1" selected>StableDiffusion1_5</option>
+            <option value="2">StableDiffusion2_1</option>
+            <option value="3">OpenJourney4</option>
+            <option value="4">OpenJourney2</option>
+            <option value="5">OpenJourney1</option>
+            <option value="6">ModernDisney</option>
+            <option value="7">FutureDiffusion</option>
+            <option value="8">RealisticVision2_0</option>
+        </select>
+    </p>
+    <br />
+
+    <button @onclick="CreateImageJob">Generate Image</button>
+}
+
+<br />
+<br />
+
+@code
+{
+    private string? ApiKey { get; set; }
+    private string? Prompt { get; set; }
+    private int NumberOfSamples { get; set; } = 1;
+    private int ModelNumber { get; set; } = 8;    
+
+    private ImageJobCreateResponse? ImageJob { get; set; }
+    private ImageJobResponse? ImageJobInfo { get; set; }
+
+    private bool JobInProgress = false;
+    private bool JobDone = false;
+
+    private async Task CreateImageJob()
+    {
+        if (string.IsNullOrEmpty(ApiKey))
+            throw new ArgumentNullException(nameof(ApiKey));
+
+        var imageJobService = new ImageJobService(new LeapAiOptions
+        {
+            ApiKey = ApiKey,
+            ApiVersion = "v1",
+            DefaultModelId = ChooseModel(ModelNumber.ToString())
+        });
+
+        ImageJobCreateResponse? imageResult = null;
+
+        try
+        {
+            imageResult = await imageJobService.CreateImageJobAsync(new ImageJobCreateRequest
+                {
+                    Prompt = Prompt,
+                    NegativePrompt = "out of frame, lowres, text, error, cropped, " +
+                                     "worst quality, low quality, jpeg artifacts, " +
+                                     "ugly, duplicate, morbid, mutilated, out of frame, " +
+                                     "extra fingers, mutated hands, poorly drawn hands, " +
+                                     "poorly drawn face, mutation, deformed, blurry, " +
+                                     "dehydrated, bad anatomy, bad proportions, " +
+                                     "extra limbs, cloned face, disfigured, " +
+                                     "gross proportions, malformed limbs, missing arms, " +
+                                     "missing legs, extra arms, extra legs, fused fingers, " +
+                                     "too many fingers, long neck, username, watermark, " +
+                                     "signature",
+                    NumberOfImages = NumberOfSamples,
+                    Height = 1024,
+                    Width = 1024,
+                    PromptStrength = 15,
+                    EnhancePrompt = true,
+                    RestoreFaces = true,
+                    Steps = 50,
+                    Seed = 4523184,
+                    UpscaleBy = "x1",
+                    Sampler = StaticValues.ImageStatics.Sampler_ddim
+                });
+        }
+        catch (Exception ex)
+        {
+            // display the error message
+            Console.WriteLine($"Error generating image for prompt {Prompt}: {ex.Message}");
+            Console.ReadLine();
+
+            return;
+        }
+
+        JobInProgress = true;
+        ImageJob = imageResult;
+
+        StateHasChanged();
+
+        await CheckImageJob();
+    }
+
+    private async Task CheckImageJob()
+    {
+        if (string.IsNullOrEmpty(ApiKey))
+            throw new ArgumentNullException(nameof(ApiKey));
+        if (ImageJob == null)
+            throw new ArgumentNullException(nameof(ImageJob));
+        if (string.IsNullOrEmpty(ImageJob.Id))
+            throw new ArgumentNullException(nameof(ImageJob.Id));
+        if (string.IsNullOrEmpty(ImageJob.ModelId))
+            throw new ArgumentNullException(nameof(ImageJob.ModelId));
+
+        var imageJobService = new ImageJobService(new LeapAiOptions
+        {
+            ApiKey = ApiKey,
+            ApiVersion = "v1",
+            DefaultModelId = ChooseModel(ModelNumber.ToString())
+        });
+
+        ImageJobResponse? imageResult = null;
+
+        var attempts = 0;
+
+        while (attempts <= 10)
+        {
+            try
+            {
+                imageResult = await imageJobService.GetImageJobAsync(ImageJob.ModelId,
+                    ImageJob.Id);
+            }
+            catch (Exception ex)
+            {
+                // display the error message
+                Console.WriteLine($"Error retrieving image(s): {ex.Message}");
+                Console.ReadLine();
+
+                return;
+            }
+
+            if (imageResult != null && imageResult.State == "finished")
+            {
+                ImageJobInfo = imageResult;
+                JobDone = true;
+
+                StateHasChanged();
+                await Task.Delay(1);
+
+                break;
+            }
+
+            attempts++;
+            await Task.Delay(60000);
+        }
+    }
+
+    private string ChooseModel(string modelNumber)
+    {
+        return modelNumber switch
+        {
+            "1" => PreTrainedModels.StableDiffusion1_5,
+            "2" => PreTrainedModels.StableDiffusion2_1,
+            "3" => PreTrainedModels.OpenJourney4,
+            "4" => PreTrainedModels.OpenJourney2,
+            "5" => PreTrainedModels.OpenJourney1,
+            "6" => PreTrainedModels.ModernDisney,
+            "7" => PreTrainedModels.FutureDiffusion,
+            "8" => PreTrainedModels.RealisticVision2_0,
+            _ => PreTrainedModels.OpenJourney4
+        };
+    }
+}
